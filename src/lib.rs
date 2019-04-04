@@ -260,11 +260,36 @@ impl fmt::Display for PatchError {
 ///     from_value(json!([{"op":"replace", "path": "/foo", "value": 64}])).unwrap()
 /// );
 /// ```
+///
+/// ```rust
+/// # extern crate serde_json;
+/// # use serde_json::json;
+/// # use json_patch::*;
+/// let patch = from_value(json!([
+///     {"op":"test", "path": "/foo", "value": 24},
+///     {"op":"replace", "path": "/foo", "value": 32},
+///     {"op":"test", "path": "/foo", "value": 32},
+///     {"op":"replace", "path": "/foo", "value": 48},
+///     {"op":"test", "path": "/foo", "value": 48}
+/// ])).unwrap();
+///
+/// let inv = from_value(json!([
+///     {"op":"test", "path": "/foo", "value": 48},
+///     {"op":"replace", "path": "/foo", "value": 32},
+///     {"op":"test", "path": "/foo", "value": 32},
+///     {"op":"replace", "path": "/foo", "value": 24},
+///     {"op":"test", "path": "/foo", "value": 24}
+/// ])).unwrap();
+///
+/// let doc = json!({"foo":24});
+/// assert_eq!(invert(&doc, &patch), inv);
+/// ```
 pub fn invert(doc: &Value, patch: &Patch) -> Patch {
     // We're going to build up the inverse patch in reverse.  When a single
     // op results in two "inverse" ops being pushed to `buf`, push them
     // in reverse-order.  We'll flip the whole vec later.
     let mut buf = Vec::new();
+    let mut doc = doc.clone();
     for x in &patch.0 {
         match x {
             PatchOperation::Add(op) => match doc.pointer(&op.path) {
@@ -315,9 +340,11 @@ pub fn invert(doc: &Value, patch: &Patch) -> Patch {
                 }
             },
             PatchOperation::Test(op) => {
-                unimplemented!();
+                buf.push(PatchOperation::Test(op.clone()));
             }
         }
+        // Update `doc` so that intermediate tests succeed.
+        apply_patches(&mut doc, &[x.clone()]).unwrap();
     }
     buf.reverse();
     Patch(buf)
