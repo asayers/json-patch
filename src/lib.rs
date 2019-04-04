@@ -201,6 +201,70 @@ impl fmt::Display for PatchError {
     }
 }
 
+/// Compute the inverse of a patch.
+pub fn invert(doc: &Value, patch: &Patch) -> Patch {
+    // We're going to build up the inverse patch in reverse.  When a single
+    // op results in two "inverse" ops being pushed to `buf`, push them
+    // in reverse-order.  We'll flip the whole vec later.
+    let mut buf = Vec::new();
+    for x in &patch.0 {
+        match x {
+            PatchOperation::Add(op) => match doc.pointer(&op.path) {
+                None => buf.push(PatchOperation::Remove(RemoveOperation {
+                    path: op.path.clone(),
+                })),
+                Some(oldval) => buf.push(PatchOperation::Replace(ReplaceOperation {
+                    path: op.path.clone(),
+                    value: oldval.clone(),
+                })),
+            },
+            PatchOperation::Remove(op) => buf.push(PatchOperation::Add(AddOperation {
+                path: op.path.clone(),
+                value: doc.pointer(&op.path).unwrap().clone(),
+            })),
+            PatchOperation::Replace(op) => buf.push(PatchOperation::Replace(ReplaceOperation {
+                path: op.path.clone(),
+                value: doc.pointer(&op.path).unwrap().clone(),
+            })),
+            PatchOperation::Copy(op) => match doc.pointer(&op.path) {
+                None => buf.push(PatchOperation::Remove(RemoveOperation {
+                    path: op.path.clone(),
+                })),
+                Some(oldval) => buf.push(PatchOperation::Replace(ReplaceOperation {
+                    path: op.path.clone(),
+                    value: oldval.clone(),
+                })),
+            },
+            PatchOperation::Move(op) => match doc.pointer(&op.path) {
+                None => {
+                    buf.push(PatchOperation::Add(AddOperation {
+                        path: op.from.clone(),
+                        value: doc.pointer(&op.from).unwrap().clone(),
+                    }));
+                    buf.push(PatchOperation::Remove(RemoveOperation {
+                        path: op.path.clone(),
+                    }));
+                }
+                Some(oldval) => {
+                    buf.push(PatchOperation::Add(AddOperation {
+                        path: op.from.clone(),
+                        value: doc.pointer(&op.from).unwrap().clone(),
+                    }));
+                    buf.push(PatchOperation::Replace(ReplaceOperation {
+                        path: op.path.clone(),
+                        value: oldval.clone(),
+                    }));
+                }
+            },
+            PatchOperation::Test(op) => {
+                unimplemented!();
+            }
+        }
+    }
+    buf.reverse();
+    Patch(buf)
+}
+
 fn parse_index(str: &str, len: usize) -> Result<usize, PatchError> {
     // RFC 6901 prohibits leading zeroes in index
     if str.starts_with('0') && str.len() != 1 {
