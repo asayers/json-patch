@@ -202,6 +202,64 @@ impl fmt::Display for PatchError {
 }
 
 /// Compute the inverse of a patch.
+///
+/// This function returns a patch which will revert the document to its
+/// original state, if applied immediately after the given patch.  In other
+/// words, the following property holds for all `doc`, `p`:
+///
+/// ```rust
+/// # extern crate serde_json;
+/// # use serde_json::*;
+/// # use json_patch::*;
+/// # let mut doc = json!({});
+/// # let p = Patch(vec![]);
+/// let inv = invert(&doc, &p);
+///
+/// let orig = doc.clone();
+/// patch(&mut doc, &p);
+/// patch(&mut doc, &inv);
+/// assert_eq!(doc, orig);
+/// ```
+///
+/// Note that these inverse patches are specific to the choice of original
+/// document.  It's not possible (in general) to create a patch which will
+/// revert another when applied to _any_ document.
+///
+/// ```rust
+/// # extern crate serde_json;
+/// # use serde_json::*;
+/// # use json_patch::*;
+/// # let mut doc1 = json!({"foo":1});
+/// # let mut doc2 = json!({"foo":2});
+/// # let p = Patch(vec![PatchOperation::Remove(RemoveOperation{path: "/foo".into()})]);
+/// let inv = invert(&doc1, &p);
+///
+/// let orig = doc2.clone();
+/// patch(&mut doc2, &p);
+/// patch(&mut doc2, &inv);
+/// assert_ne!(doc2, orig);
+/// ```
+///
+/// # Example
+///
+/// ```rust
+/// # extern crate serde_json;
+/// # use serde_json::json;
+/// # use json_patch::*;
+/// let patch = from_value(json!([{"op":"replace", "path": "/foo", "value": 32}])).unwrap();
+///
+/// let doc1 = json!({"foo": 16});
+/// assert_eq!(
+///     invert(&doc1, &patch),
+///     from_value(json!([{"op":"replace", "path": "/foo", "value": 16}])).unwrap()
+/// );
+///
+/// let doc2 = json!({"foo": 64});
+/// assert_eq!(
+///     invert(&doc2, &patch),
+///     from_value(json!([{"op":"replace", "path": "/foo", "value": 64}])).unwrap()
+/// );
+/// ```
 pub fn invert(doc: &Value, patch: &Patch) -> Patch {
     // We're going to build up the inverse patch in reverse.  When a single
     // op results in two "inverse" ops being pushed to `buf`, push them
