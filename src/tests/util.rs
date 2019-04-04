@@ -1,4 +1,4 @@
-use super::super::{merge, patch, Patch};
+use super::super::{merge, patch, Patch, invert};
 use serde_json;
 use serde_json::Value;
 use std::fmt::Write;
@@ -34,6 +34,11 @@ fn run_case(doc: Value, patches: Value, merge_patch: bool) -> Result<Value, Stri
                 e
             })
             .map_err(|e| e.to_string())?;
+
+        let inv = invert(&doc, &patches);
+        let mut revert = actual.clone();
+        patch(&mut revert, &inv).unwrap();
+        assert_eq!(doc, revert, "reverted doc should be same as original: {:?}", inv);
     }
     Ok(actual)
 }

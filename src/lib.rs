@@ -296,10 +296,19 @@ pub fn invert(doc: &Value, patch: &Patch) -> Patch {
                 None => buf.push(PatchOperation::Remove(RemoveOperation {
                     path: op.path.clone(),
                 })),
-                Some(oldval) => buf.push(PatchOperation::Replace(ReplaceOperation {
-                    path: op.path.clone(),
-                    value: oldval.clone(),
-                })),
+                Some(oldval) => {
+                    let (parent, _) = split_pointer(&op.path).unwrap();
+                    if doc.pointer(parent).unwrap().is_array() {
+                        buf.push(PatchOperation::Remove(RemoveOperation {
+                            path: op.path.clone(),
+                        }));
+                    } else {
+                        buf.push(PatchOperation::Replace(ReplaceOperation {
+                            path: op.path.clone(),
+                            value: oldval.clone(),
+                        }))
+                    }
+                }
             },
             PatchOperation::Remove(op) => buf.push(PatchOperation::Add(AddOperation {
                 path: op.path.clone(),
@@ -318,17 +327,11 @@ pub fn invert(doc: &Value, patch: &Patch) -> Patch {
                     value: oldval.clone(),
                 })),
             },
-            PatchOperation::Move(op) => match doc.pointer(&op.path) {
-                None => {
-                    buf.push(PatchOperation::Add(AddOperation {
-                        path: op.from.clone(),
-                        value: doc.pointer(&op.from).unwrap().clone(),
-                    }));
-                    buf.push(PatchOperation::Remove(RemoveOperation {
-                        path: op.path.clone(),
-                    }));
-                }
-                Some(oldval) => {
+            PatchOperation::Move(op) => {
+                let (parent, _) = split_pointer(&op.path).unwrap();
+                let oldval = doc.pointer(&op.path);
+                if oldval.is_some() && !doc.pointer(parent).unwrap().is_array() {
+                    let oldval = oldval.unwrap();
                     buf.push(PatchOperation::Add(AddOperation {
                         path: op.from.clone(),
                         value: doc.pointer(&op.from).unwrap().clone(),
@@ -337,8 +340,16 @@ pub fn invert(doc: &Value, patch: &Patch) -> Patch {
                         path: op.path.clone(),
                         value: oldval.clone(),
                     }));
+                } else {
+                    buf.push(PatchOperation::Add(AddOperation {
+                        path: op.from.clone(),
+                        value: doc.pointer(&op.from).unwrap().clone(),
+                    }));
+                    buf.push(PatchOperation::Remove(RemoveOperation {
+                        path: op.path.clone(),
+                    }));
                 }
-            },
+            }
             PatchOperation::Test(op) => {
                 buf.push(PatchOperation::Test(op.clone()));
             }
